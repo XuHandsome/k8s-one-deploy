@@ -1,0 +1,5 @@
+---
+pkgdir: "{{ inventory_dir }}/packages"
+install_base: "/data/kubernetes"
+yumrepo: "kubernetes"
+service_ports: [5000]

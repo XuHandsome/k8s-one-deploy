@@ -1,0 +1,9 @@
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: ClusterConfiguration
+kubernetesVersion: v1.18.20
+imageRepository: hub.images.com:5000/k8s
+controlPlaneEndpoint: "{{hostvars['master']['ansible_host']}}:6443"
+networking:
+  serviceSubnet: "{{serviceSubnet}}"
+  podSubnet: "{{podSubnet}}"
+  dnsDomain: "cluster.local"

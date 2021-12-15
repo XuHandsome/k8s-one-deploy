@@ -1,0 +1,66 @@
+- name: copy registry docker img
+  synchronize: src={{pkgdir}}/images/{{ item }}.tar.gz dest={{install_base}}/images/
+  with_items:
+    - registry:latest
+  register: registry_imgs
+  when: inventory_hostname == 'master'
+  tags:
+    - registry
+
+- name: upload registry data dir
+  synchronize:
+    src={{ pkgdir }}/registry
+    dest={{install_base}}/
+  when: inventory_hostname == 'master'
+
+- name: upload registry start scirpts
+  template: src=registry-service-docker.sh dest={{install_base}}/tools mode=0755
+  when: inventory_hostname == 'master'
+  tags:
+    - registry
+
+- name: load docker images
+  shell: "{{install_base}}/tools/registry-service-docker.sh init"
+  when:
+    - registry_imgs.changed
+    - inventory_hostname == 'master'
+  tags:
+    - registry
+
+- name: start registry service docker
+  shell: "{{install_base}}/tools/registry-service-docker.sh restart"
+  when: inventory_hostname == 'master'
+  tags:
+    - registry
+    - restart
+
+- name: check service status
+  shell: "{{install_base}}/tools/registry-service-docker.sh status"
+  register: serv_check
+  when: inventory_hostname == 'master'
+  changed_when: False
+  tags:
+    - registry
+    - never
+
+- name: configure /etc/hosts for registry server
+  lineinfile:
+    path: /etc/hosts
+    regexp: "hub.images.com$"
+    line: "{{hostvars['master']['ansible_host']}} hub.images.com"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: wait for server listen port {{service_ports}}
+  wait_for:
+    port: "{{item}}"
+    timeout: 300
+    delay: 10
+    sleep: 1
+  with_items:
+    - "{{service_ports}}"
+  tags:
+    - registry
+    - check
+  when: inventory_hostname == 'master'

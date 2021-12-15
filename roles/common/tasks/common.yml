@@ -1,0 +1,95 @@
+- name: check /data mount point
+  command: mountpoint -q /data
+  register: volume_stat
+  failed_when: volume_stat.rc != 0
+  changed_when: False
+  tags:
+    - init
+    - check
+
+## create common dirs
+- name: create directorys
+  file: name={{install_base}} state=directory owner=root group=root mode=0755
+  tags:
+    - init
+
+- name: create directorys
+  file: name={{install_base}}/{{ item }} state=directory owner=root group=root mode=0755 recurse=no
+  with_items:
+    - "images"
+    - "tools"
+    - "k8s"
+  tags:
+    - init
+
+## 系统初始化脚本
+- name: copy system init scripts
+  copy: src=system-init.sh dest={{install_base}}/tools/system-init.sh mode=0755
+  tags:
+    - init
+
+- name: configure system settings
+  command: "{{install_base}}/tools/system-init.sh"
+  tags:
+    - init
+
+- name: remove swap mount in fstab
+  lineinfile:
+    dest: /etc/fstab
+    regex: 'swap'
+    state: absent
+
+##yum源配置文件
+- name: remove system yum repo conf
+  file: path=/etc/yum.repos.d/{{item}}.repo state=absent
+  with_items:
+    - CentOS-Base
+    - epel
+  tags:
+    - yumrepo
+    - baserpm
+    - init
+
+- name: cofigure yum repo
+  template: src={{ yumrepo }}.repo.j2 dest=/etc/yum.repos.d/{{ yumrepo }}.repo
+  tags:
+    - yumrepo
+    - baserpm
+    - init
+
+- name: clean yum cache
+  command: yum clean all
+  changed_when: False
+  tags:
+    - yumrepo
+    - init
+
+## 移除自带urllib3，解决安装python-requests报错/usr/lib/python2.7/site-packages/urllib3/packages/ssl_match_hostname 失败：cpio: rename
+- name: remove old urllib3 rpm
+  yum:
+      name:
+        - python-urllib3
+      state: removed
+- name: remove old urllib3 packages
+  file:
+    path: /usr/lib/python2.7/site-packages/urllib3
+    state: absent
+
+##安装基础软件工具
+- name: Install basic rpms
+  yum:
+    disablerepo: "*"
+    enablerepo: "{{ yumrepo }}"
+    name:
+      - wget
+      - vim
+      - zip
+      - unzip
+      - telnet
+      - expect
+      - rsync
+      - bash-completion
+    state: present
+  tags:
+    - baserpm
+    - init

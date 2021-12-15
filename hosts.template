@@ -1,0 +1,19 @@
+[all]
+master ansible_host=192.168.96.146
+worker01 ansible_host=192.168.96.147
+worker02 ansible_host=192.168.96.148
+
+[all:vars]
+ansible_ssh_user='root'
+ansible_ssh_port=22
+ansible_ssh_pass='password'
+
+# docker服务数据目录，尽量放在容量较大的数据盘中
+docker_path=/data/docker
+# docker0网段设置，可自定义避免与客户网络环境冲突
+docker0_net="192.168.250.1/24"
+
+
+# k8s配置
+serviceSubnet=10.24.0.0/16
+podSubnet=10.23.0.0/16

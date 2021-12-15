@@ -1,0 +1,4 @@
+---
+pkgdir: "{{ inventory_dir }}/packages"
+install_base: "/data/kubernetes"
+yumrepo: "kubernetes"

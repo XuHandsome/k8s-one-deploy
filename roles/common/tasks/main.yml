@@ -1,0 +1,14 @@
+---
+
+- include: common.yml
+  when: ansible_local.custom.general.common_role_exists is not defined
+- name: create facts dir
+  file:
+    path: /etc/ansible/facts.d
+    state: directory
+  when: ansible_local.custom.general.common_role_exists is not defined
+- name: push facts common_role_exists
+  copy:
+    src: custom.fact
+    dest: /etc/ansible/facts.d
+  when: ansible_local.custom.general.common_role_exists is not defined

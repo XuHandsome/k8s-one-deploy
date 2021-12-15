@@ -1,0 +1,274 @@
+- name: install k8s rpms
+  yum:
+    disablerepo: "*"
+    enablerepo: "{{yumrepo}}"
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+  tags:
+    - rpm
+    - k8s
+
+- name: set kubectl bash completion
+  lineinfile:
+    path: /root/.bashrc
+    regexp: '^source /usr/share/bash-completion/bash_completion$'
+    line: 'source /usr/share/bash-completion/bash_completion'
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - k8s
+
+- name: add kubectl bash completion to bashrc
+  lineinfile:
+    path: /root/.bashrc
+    regexp: '^source <(kubectl completion bash)$'
+    line: 'source <(kubectl completion bash)'
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - k8s
+
+- name: config bridge nf call iptables to 1
+  shell: "echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables"
+  tags:
+    - k8s
+
+# 配置hosts解析
+- name: configure /etc/hosts for k8s master
+  lineinfile:
+    path: /etc/hosts
+    regexp: "{{hostvars['master']['ansible_hostname']}}"
+    line: "{{hostvars['master']['ansible_host']}} {{hostvars['master']['ansible_nodename']}}"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - k8s
+
+- name: configure /etc/hosts for k8s worker01
+  lineinfile:
+    path: /etc/hosts
+    regexp: "{{hostvars['worker01']['ansible_nodename']}}"
+    line: "{{hostvars['worker01']['ansible_host']}} {{hostvars['worker01']['ansible_nodename']}}"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - k8s
+  when: hostvars["worker01"] is defined
+
+- name: configure /etc/hosts for k8s worker02
+  lineinfile:
+    path: /etc/hosts
+    regexp: "{{hostvars['worker02']['ansible_nodename']}}"
+    line: "{{hostvars['worker02']['ansible_host']}} {{hostvars['worker02']['ansible_nodename']}}"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - k8s
+  when: hostvars["worker02"] is defined
+
+# master节点集群初始化
+- name: copy kubeadm-config.yaml to master
+  template: src={{item}} dest={{install_base}}/k8s
+  with_items:
+    - kubeadm-config.yaml
+    - flannel-v0.14.0.yaml
+    - coredns-configmap.yaml
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: check master running status
+  shell: "kubectl get nodes|grep master|wc -l"
+  when: inventory_hostname == 'master'
+  register: master_exists
+  tags:
+    - k8s
+    - master
+
+- name: init k8s master
+  shell: "kubeadm init --config={{install_base}}/k8s/kubeadm-config.yaml --upload-certs"
+  when:
+    - inventory_hostname == 'master'
+    - master_exists.stdout|int != 1
+  tags:
+    - k8s
+    - master
+
+- name: get join cluster command
+  shell: "kubeadm token create --print-join-command --ttl=0|grep kubeadm"
+  register: join_command
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: config kubectl config
+  shell: "mkdir -p /root/.kube && cp -f /etc/kubernetes/admin.conf /root/.kube/config"
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: install flannel 0.14.0
+  shell: "kubectl apply -f {{install_base}}/k8s/flannel-v0.14.0.yaml"
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: add resolv configure coredns configmap
+  shell: "kubectl apply -f {{install_base}}/k8s/coredns-configmap.yaml"
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: install helm 3.6.3
+  unarchive:
+    src={{ pkgdir }}/helm-v3.6.3.tar.gz
+    dest=/usr/bin
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: add helm bash completion to bashrc
+  lineinfile:
+    path: /root/.bashrc
+    regexp: '^source <(helm completion bash)$'
+    line: 'source <(helm completion bash)'
+    owner: root
+    group: root
+    mode: 0644
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+
+- name: check worker01 running status
+  shell: "kubectl get nodes|grep {{hostvars['worker01']['ansible_nodename']}}|wc -l"
+  when:
+    - inventory_hostname == 'master'
+    - hostvars["worker01"] is defined
+  register: worker01_exists
+  tags:
+    - k8s
+    - master
+
+- name: worker01 join k8s cluster
+  shell: "{{hostvars.master.join_command.stdout|string}}"
+  when:
+    - inventory_hostname == 'worker01'
+    - hostvars.master.worker01_exists.stdout|int != 1
+  tags:
+    - k8s
+    - worker
+
+- name: check worker02 running status
+  shell: "kubectl get nodes|grep {{hostvars['worker02']['ansible_nodename']}}|wc -l"
+  when:
+    - inventory_hostname == 'master'
+    - hostvars["worker02"] is defined
+  register: worker02_exists
+  tags:
+    - k8s
+    - master
+
+- name: worker02 join k8s cluster
+  shell: "{{hostvars.master.join_command.stdout|string}}"
+  when:
+    - inventory_hostname == 'worker02'
+    - hostvars.master.worker02_exists.stdout|int != 1
+  tags:
+    - k8s
+    - worker
+
+- name: enable kubelet service
+  service: name=kubelet enabled=yes daemon_reload=yes
+  tags:
+    - k8s
+
+# 去除master标签，设置为可调度
+- name: remove master label
+  shell: "kubectl taint node {{hostvars['master']['ansible_nodename']}} node-role.kubernetes.io/master-"
+  when:
+    - inventory_hostname == 'master'
+    - master_exists.stdout|int != 1
+  tags:
+    - k8s
+    - master
+
+- name: check IngressProxy label exists in master
+  shell: "kubectl get nodes --show-labels|grep IngressProxy|wc -l"
+  register: lables_exists
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: add ingressproxy label to master
+  shell: "kubectl label nodes {{hostvars['master']['ansible_nodename']}} IngressProxy=true"
+  when:
+    - inventory_hostname == 'master'
+    - lables_exists.stdout|int != 1
+  tags:
+    - k8s
+    - master
+
+- name: add worker01 labels
+  shell: "kubectl label nodes {{hostvars['worker01']['ansible_nodename']}} kubernetes.io/role=worker"
+  when:
+    - inventory_hostname == 'master'
+    - hostvars["worker01"] is defined
+    - hostvars.master.worker01_exists.stdout|int != 1
+  tags:
+    - k8s
+    - master
+
+- name: add worker02 labels
+  shell: "kubectl label nodes {{hostvars['worker02']['ansible_hostname']}} kubernetes.io/role=worker"
+  when:
+    - inventory_hostname == 'master'
+    - hostvars["worker02"] is defined
+    - hostvars.master.worker02_exists.stdout|int != 1
+  tags:
+    - k8s
+    - master
+
+# 更新k8s集群证书为100年
+- name: copy update k8s certs script
+  copy: src=update-kubeadm-cert.sh dest={{install_base}}/tools/update-kubeadm-cert.sh mode=0755
+  when:
+    - inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: update k8s certs to 36500 days
+  shell: "{{install_base}}/tools/update-kubeadm-cert.sh all"
+  when:
+    - inventory_hostname == 'master'
+  tags:
+    - k8s
+    - master
+
+- name: wait for server listen port {{service_ports}}
+  wait_for:
+    port: "{{item}}"
+    timeout: 300
+    delay: 10
+    sleep: 1
+  with_items:
+    - "{{service_ports}}"
+  when: inventory_hostname == 'master'
+  tags:
+    - k8s
+    - check

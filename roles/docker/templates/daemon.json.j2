@@ -1,0 +1,11 @@
+{
+    "bip": "{{docker0_net|default("172.17.0.1/16")}}",
+    "insecure-registries": ["hub.images.com:5000"],
+    "exec-opts": ["native.cgroupdriver=systemd"],
+    "log-driver": "json-file",
+    {% if docker_path is defined %}"data-root": "{{docker_path}}",
+    {% endif %}"log-opts": {
+        "max-size": "100m",
+        "max-file": "3"
+    }
+}

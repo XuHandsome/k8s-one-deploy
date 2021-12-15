@@ -1,0 +1,59 @@
+
+##安装时间同步服务
+- name: Install ntp rpms
+  yum:
+    disablerepo: "*"
+    enablerepo: "{{ yumrepo }}"
+    name:
+      - ntpdate
+      - ntp
+  tags:
+    - baserpm
+    - k8s
+
+- name: configure /etc/hosts for ntp server
+  lineinfile:
+    path: /etc/hosts
+    regexp: "ntp.local.com$"
+    line: "{{hostvars['master']['ansible_host']}} ntp.local.com"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: upload ntp client config
+  template: src=ntp-client.conf dest=/etc/ntp.conf
+  when:
+    - inventory_hostname != 'master'
+  tags:
+    - yumrepo
+    - baserpm
+    - k8s
+
+- name: upload ntp server config
+  template: src=ntp-server.conf dest=/etc/ntp.conf
+  when:
+    - inventory_hostname == 'master'
+  tags:
+    - yumrepo
+    - baserpm
+    - k8s
+
+- name: start ntpd service
+  service: name=ntpd state=restarted enabled=yes daemon_reload=yes
+  tags:
+    - k8s
+
+- name: first sync date in ever worker
+  shell: "/usr/sbin/ntpdate -u ntp.local.com"
+  when:
+    - inventory_hostname != 'master'
+  tags:
+    - k8s
+
+- name: add sync date from ntp server cronjob
+  cron: name="sync date from ntp server" state=present user=root minute="00" hour="01" day="*" month="*" weekday="*" job="/usr/sbin/ntpdate -u ntp.local.com"
+  when:
+    - inventory_hostname != 'master'
+  tags:
+    - crontab
+    - k8s
