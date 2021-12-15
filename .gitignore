@@ -1,0 +1,10 @@
+roles/test*
+hosts
+*.retry
+services
+service.list
+logs
+# packages/images/*.gz
+packages/images/k8s/*.gz
+packages/registry_data.tar.gz
+k8s-one-deploy*
