@@ -297,6 +297,7 @@ update-*)
     echo "-----------------------------------------------------"
     echo "init              init system"
     echo "deploy            one install kubernetes"
+    echo "clean-yum         update yum repo cache"
     echo "update-k8s        update k8s services"
     echo "update-registry   update image registry"
     exit
