@@ -74,6 +74,15 @@
     - k8s
   when: hostvars["worker02"] is defined
 
+- name: configure /etc/hosts for registry server
+  lineinfile:
+    path: /etc/hosts
+    regexp: "hub.images.com$"
+    line: "{{hostvars['master']['ansible_host']}} hub.images.com"
+    owner: root
+    group: root
+    mode: 0644
+
 # master节点集群初始化
 - name: copy kubeadm-config.yaml to master
   template: src={{item}} dest={{install_base}}/k8s

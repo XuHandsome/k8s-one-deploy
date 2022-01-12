@@ -43,15 +43,6 @@
     - registry
     - never
 
-- name: configure /etc/hosts for registry server
-  lineinfile:
-    path: /etc/hosts
-    regexp: "hub.images.com$"
-    line: "{{hostvars['master']['ansible_host']}} hub.images.com"
-    owner: root
-    group: root
-    mode: 0644
-
 - name: wait for server listen port {{service_ports}}
   wait_for:
     port: "{{item}}"
